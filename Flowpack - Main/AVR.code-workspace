@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"io.h": "c",
+			"io86r401.h": "c",
+			"dio_interface.h": "c",
+			"exti_register.h": "c",
+			"steppermotor_interface.h": "c",
+			"relay_config.h": "c",
+			"heaters_interface.h": "c",
+			"limit_switch_config.h": "c",
+			"spi_interface.h": "c",
+			"exti_interface.h": "c",
+			"delay.h": "c",
+			"limit_switch_interface.h": "c"
+		}
+	}
+}

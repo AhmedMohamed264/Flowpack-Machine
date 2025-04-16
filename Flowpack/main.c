@@ -1,0 +1,530 @@
+#include "BIT_MATH.h"
+#include "STD_TYPES.h"
+
+#include "DIO_interface.h"
+#include "UART_interface.h"
+#include "UART_register.h"
+#include "CLCD_interface.h"
+#include "BUTTON_interface.h"
+#include "TIMER_interface.h"
+#include "TIMER_register.h"
+#include "GIE_interface.h"
+#include "EXTI_register.h"
+
+#include <util/delay.h>
+#include <avr/interrupt.h>
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+
+#define PROCESS1_TIME 			500
+#define PROCESS2_TIME 			2000
+#define STATE_TOGGLE_MIN_TIME	800
+#define CURSOR_FIRST_LINE 		0
+#define CURSOR_SECOND_LINE 		1
+#define CURSOR_THIRD_LINE 		2
+#define CURSOR_FOURTH_LINE		3
+#define DEFAULT_SHOW_TIME 		2000
+#define MAX_PRODUCTS_LIMIT 		10000
+#define MACHINE_START_CODE		255
+#define MACHINE_STOP_CODE		254
+#define MACHINE_RUNNING			1
+#define MACHINE_STOPPED			0
+#define TRUE					1
+#define FALSE					0
+#define BUTTON_TIMEOUT			40000000
+
+
+void Millis_voidInit();
+
+void Millis_voidCount();
+
+// showing main screen, products count and conveyor speed
+void Run_voidProcess1();
+
+// showing welcome screen
+void Run_voidProcess2();
+
+void String_voidPrepareStrings(u8 string1[20], u8 string2[20], u8 string3[20], u8 string4[20]);
+
+void CLCD_voidSendNewStrings(u8 strings[4][20], s8 lastCursorPosX, s8 lastCursorPosY);
+
+void BUTTON_voidSetButtonEnterState(void);
+
+void BUTTON_voidSetButtonToggleRunState(void);
+
+void APP_voidGetConveyorSpeed(void);
+
+void APP_voidGetProductsLimit(void);
+
+void APP_voidDisplayMainScreen(void);
+
+void APP_voidReceiveProducts(void);
+
+void APP_voidCheckProductsLimit(void);
+
+void APP_voidCheckToggleButton(void);
+
+
+// Uart global
+extern u8 GlobalUART_u8RXData;
+
+// Auto run globals
+u32 Global_u32CurrentMillis = 0, Global_u32P1PrevMillis = 0, Global_u32P2PrevMillis = 0;
+
+// Products global
+u32 Global_u32Products = 0;
+
+// Conveyor Speed global
+u8 Global_u8Speed = 50; // initial speed is 50%
+
+// Buttons global
+u8 Global_u8ButtonEnterState = BUTTON_NOT_PRESSED;
+
+// Products Limit global
+u32 Global_u32ProductsLimit = 0; // initial limit is 0, means no limit
+
+// machine status global
+u8 Global_u8MachineStatus = MACHINE_STOPPED;
+
+// machine just started global flag
+u8 Global_u8MachineJustStarted = FALSE;
+
+// interrupt 0 global var for time tracking
+u8 Global_u8ToggleButtonPrevMillis = 0;
+
+// Temp strings globals
+u8 Global_u8SpeedString[5], Global_u8ProductsString[10], Global_u8MenuString[4][20];
+u8 Global_u8TempProducts[10], Global_u8TempCounter = 0;
+u8 Global_u8ProductsLimitString[10];
+
+
+ISR(INT1_vect)
+{
+	BUTTON_voidSetButtonEnterState();
+}
+
+int main()
+{
+	GIE_Enable();
+	Millis_voidInit();
+	UART_voidInit();
+	UART_u8RXSetCallBack(APP_voidReceiveProducts);
+	BUTTON_voidInit();
+
+	// init external interrupt 1
+	// Falling edge sense
+	SET_BIT(MCUCR, 3);
+	CLR_BIT(MCUCR, 2);
+	// Enable External interrupt 1
+	SET_BIT(GICR, 7);
+
+	while(1)
+	{
+		APP_voidCheckToggleButton();
+		// check if the machine is running
+		if(Global_u8MachineStatus == MACHINE_RUNNING)
+		{
+			// checking if the industrial button is pressed
+			APP_voidCheckToggleButton();
+			// check if the products limit is reached
+			APP_voidCheckProductsLimit();
+			// check if the machine has just stopped due to the products limit
+			if(Global_u8MachineStatus == MACHINE_STOPPED)
+				continue;
+
+			// check if the user pressed the enter button, means he wants to set the conveyor speed and products limit
+			// or the machine has just started
+			if(Global_u8ButtonEnterState == BUTTON_PRESSED || Global_u8MachineJustStarted == TRUE)
+			{
+				// Getting the conveyor speed from the user
+				APP_voidGetConveyorSpeed();
+
+				// check if the machine has just stopped by the user
+				if(Global_u8MachineStatus == MACHINE_STOPPED)
+					continue;
+
+				// Getting the products limit from the user
+				APP_voidGetProductsLimit();
+
+				// if the machine was just started
+				if(Global_u8MachineJustStarted == TRUE)
+				{
+					// reset the "machine just started" flag
+					Global_u8MachineJustStarted = FALSE;
+
+					// send the start signal to the second MCU (responsible for machine operation) using uart
+					UART_voidSendData(MACHINE_START_CODE);
+				}
+			}
+			else
+			{
+				// checking if the industrial button is pressed
+				APP_voidCheckToggleButton();
+
+				// otherwise, the machine is running, normal operation
+				// showing main screen, products count and conveyor speed
+				Run_voidProcess1();
+			}
+		}
+		else
+		{
+			// checking if the industrial button is pressed
+			APP_voidCheckToggleButton();
+
+			// Machine is stopped, display the welcome screen continuously
+			Run_voidProcess2();
+		}
+	}
+
+	return 0;
+}
+
+void Millis_voidInit()
+{
+	TCNT2 = 131;
+	TIMER2_voidInit();
+	TIMER2_u8SetCallBack(Millis_voidCount);
+}
+
+void Millis_voidCount()
+{
+	// timer 2 preload value
+	TCNT2 = 131;
+
+	// counting every 1ms
+	Global_u32CurrentMillis++; // counting every 1ms
+}
+
+// Process actions
+void Run_voidProcess1()
+{
+	if(Global_u32CurrentMillis - Global_u32P1PrevMillis >= PROCESS1_TIME)
+	{
+		Global_u32P1PrevMillis = Global_u32CurrentMillis;
+
+		// Auto display main screen
+		APP_voidDisplayMainScreen();
+	}
+}
+
+// Process actions
+void Run_voidProcess2()
+{
+	if(Global_u32CurrentMillis - Global_u32P2PrevMillis >= PROCESS2_TIME)
+	{
+		Global_u32P2PrevMillis = Global_u32CurrentMillis;
+
+		// Welcome Screen
+		CLCD_voidSendNewStrings((u8[4][20]){"WELCOME TO", "FLOWPACK MACHINE", "Under Supervisor", "Dr: Faeka"}, CURSOR_FOURTH_LINE, 11);
+	}
+}
+
+void String_voidPrepareStrings(u8 string1[20], u8 string2[20], u8 string3[20], u8 string4[20])
+{
+	for(u8 i = 0; i < 4; i++)
+	{
+		strcpy(Global_u8MenuString[i], "");
+	}
+	strcat(Global_u8MenuString[0], string1);
+	strcat(Global_u8MenuString[1], string2);
+	strcat(Global_u8MenuString[2], string3);
+	strcat(Global_u8MenuString[3], string4);
+}
+
+void CLCD_voidSendNewStrings(u8 strings[4][20], s8 lastCursorPosX, s8 lastCursorPosY)
+{
+	// initialize the lcd
+	CLCD_voidInit();
+	// clear the lcd
+	CLCD_voidSendCommand(1);
+	// send the strings to the lcd
+	for(u8 i = 0; i < 4; i++)
+	{
+		CLCD_voidPosition(i, 0);
+		CLCD_voidSendString(strings[i]);
+	}
+	if(lastCursorPosX == -1)
+	{
+		lastCursorPosX = 0;
+	}
+	if(lastCursorPosY == -1)
+	{
+		lastCursorPosY = sizeof(strings[lastCursorPosX]) + 1;
+	}
+	CLCD_voidPosition(lastCursorPosX, lastCursorPosY);
+}
+
+void BUTTON_voidSetButtonEnterState(void)
+{
+	Global_u8ButtonEnterState = BUTTON_PRESSED;
+}
+
+void BUTTON_voidSetButtonToggleRunState(void)
+{
+	if(Global_u32CurrentMillis - Global_u8ToggleButtonPrevMillis >= STATE_TOGGLE_MIN_TIME)
+	{
+		Global_u8ToggleButtonPrevMillis = Global_u32CurrentMillis;
+
+		if(Global_u8MachineStatus == MACHINE_STOPPED)
+		{
+			Global_u8MachineStatus = MACHINE_RUNNING;
+			Global_u8MachineJustStarted = TRUE;
+		}
+		else
+		{
+			Global_u8MachineStatus = MACHINE_STOPPED;
+			UART_voidSendData(MACHINE_STOP_CODE);
+		}
+	}
+}
+
+void APP_voidGetConveyorSpeed(void)
+{
+	// reset the enter button state
+	Global_u8ButtonEnterState = BUTTON_NOT_PRESSED;
+
+	// wait for user to set the speed
+	while(1)
+	{
+		// checking if the industrial button is pressed
+		APP_voidCheckToggleButton();
+		// check if the products limit is reached, stop the machine
+		APP_voidCheckProductsLimit();
+		if(Global_u8MachineStatus == MACHINE_STOPPED)
+			break;
+
+		// convert the speed to string
+		sprintf(Global_u8SpeedString, "%d%%", Global_u8Speed);
+		// storing strings in the global array
+		String_voidPrepareStrings("Set Conveyor Speed", Global_u8SpeedString, "", "");
+		// send the strings to the lcd
+		CLCD_voidSendNewStrings(Global_u8MenuString, CURSOR_SECOND_LINE, 5);
+
+		// wait for the user to press any button
+		u8 Local_u8Button = BUTTON_u8Waiting();
+
+		// checking which button is pressed
+		if(Local_u8Button == BUTTON_UP)
+		{
+			// increase the speed
+			Global_u8Speed +=1;
+			// limit the speed to 100%
+			if(Global_u8Speed > 100)
+			{
+				Global_u8Speed = 100;
+			}
+		}
+		// decrease the conveyor speed
+		if(Local_u8Button == BUTTON_DOWN)
+		{
+			// decrease the speed
+			Global_u8Speed -= 1;
+			// limiting minimum speed to 0%
+			if(Global_u8Speed < 0 || Global_u8Speed > 100)
+			{
+				Global_u8Speed = 0;
+			}
+		}
+		// if the user pressed the enter button, means he has set the speed, or if machine is stopped
+		if(Global_u8ButtonEnterState == BUTTON_PRESSED || Global_u8MachineStatus == MACHINE_STOPPED)
+			break;
+
+		// debounce
+		_delay_ms(50);
+	}
+
+	// incase the machine was stopped, display the shutting down message
+	if(Global_u8MachineStatus == MACHINE_STOPPED)
+	{
+		// display the shutting down message
+		String_voidPrepareStrings("Shutting Down", "Stopping the Machine", "......", "");
+		CLCD_voidSendNewStrings(Global_u8MenuString, CURSOR_THIRD_LINE, 7);
+		// wait some time to show the message
+		_delay_ms(DEFAULT_SHOW_TIME);
+	}
+	else
+	{
+		// send the speed to the second MCU using uart
+		UART_voidSendData(Global_u8Speed);
+
+		// convert the speed to string
+		sprintf(Global_u8SpeedString, "%d%%", Global_u8Speed);
+		// display the final speed on lcd
+		String_voidPrepareStrings("Final Conveyor Speed", Global_u8SpeedString, "Successfully Set", "");
+		CLCD_voidSendNewStrings(Global_u8MenuString, CURSOR_THIRD_LINE, 18);
+		// wait some time to show the final speed
+		_delay_ms(DEFAULT_SHOW_TIME);
+	}
+
+	// reset the enter button state
+	Global_u8ButtonEnterState = BUTTON_NOT_PRESSED;
+}
+
+void APP_voidGetProductsLimit(void)
+{
+	// reset the enter button state
+	Global_u8ButtonEnterState = BUTTON_NOT_PRESSED;
+
+	// wait for user to set the limit
+	while(1)
+	{
+		// checking if the industrial button is pressed
+		APP_voidCheckToggleButton();
+		// check if the products limit is reached, stop the machine
+		APP_voidCheckProductsLimit();
+		if(Global_u8MachineStatus == MACHINE_STOPPED)
+			break;
+
+		// convert the limit to string
+		sprintf(Global_u8ProductsLimitString, "%u%%", Global_u32ProductsLimit);
+		// storing strings in the global array
+		String_voidPrepareStrings("Set Prodcuts Limit", Global_u8ProductsLimitString, "", "");
+		// send the strings to the lcd
+		CLCD_voidSendNewStrings(Global_u8MenuString, CURSOR_SECOND_LINE, 5);
+
+		// wait for the user to press any button
+		u8 Local_u8Button = BUTTON_u8Waiting();
+		// checking which button is pressed
+		if(Local_u8Button == BUTTON_UP)
+		{
+			// increase the limit
+			Global_u32ProductsLimit +=1;
+			// limit the limit to 10000
+			if(Global_u32ProductsLimit > MAX_PRODUCTS_LIMIT)
+			{
+				Global_u32ProductsLimit = MAX_PRODUCTS_LIMIT;
+			}
+		}
+		if(Local_u8Button == BUTTON_DOWN)
+		{
+			// decrease the limit
+			Global_u32ProductsLimit -= 1;
+			// limiting minimum limit to 0
+			if(Global_u32ProductsLimit < 0 || Global_u32ProductsLimit > MAX_PRODUCTS_LIMIT)
+			{
+				Global_u32ProductsLimit = 0;
+			}
+		}
+		// if the user pressed the enter button, means he has set the limit, or if machine is stopped
+		if(Global_u8ButtonEnterState == BUTTON_PRESSED || Global_u8MachineStatus == MACHINE_STOPPED)
+			break;
+
+		// debounce
+		_delay_ms(50);
+	}
+
+	// incase the machine was stopped, display the shutting down message
+	if(Global_u8MachineStatus == MACHINE_STOPPED)
+	{
+		// display the shutting down message
+		String_voidPrepareStrings("Shutting Down", "Stopping the Machine", "......", "");
+		CLCD_voidSendNewStrings(Global_u8MenuString, CURSOR_THIRD_LINE, 7);
+		// wait some time to show the message
+		_delay_ms(DEFAULT_SHOW_TIME);
+	}
+	else
+	{
+		// convert the limit to string
+		sprintf(Global_u8ProductsLimitString, "%u%%", Global_u32ProductsLimit);
+		// check if the limit is 0, means no limit
+		if(Global_u32ProductsLimit == 0)
+		{
+			String_voidPrepareStrings("Final Products Limit", "No Limit", "Successfully Set", "");
+		}
+		else
+		{
+			String_voidPrepareStrings("Final Products Limit", Global_u8ProductsLimitString, "Successfully Set", "");
+		}
+		// display the final limit on lcd
+		CLCD_voidSendNewStrings(Global_u8MenuString, CURSOR_THIRD_LINE, 18);
+
+		// wait some time to show the final limit
+		_delay_ms(DEFAULT_SHOW_TIME);
+	}
+	// reset the enter button state
+	Global_u8ButtonEnterState = BUTTON_NOT_PRESSED;
+}
+
+void APP_voidDisplayMainScreen(void)
+{
+	sprintf(Global_u8SpeedString, "%d%%", Global_u8Speed);
+	sprintf(Global_u8ProductsString, "%d", Global_u32Products);
+	String_voidPrepareStrings("Products Count", Global_u8ProductsString, "Conveyor Speed", Global_u8SpeedString);
+	CLCD_voidSendNewStrings(Global_u8MenuString, CURSOR_FOURTH_LINE, 5);
+}
+
+void APP_voidReceiveProducts(void)
+{
+	Global_u8TempProducts[Global_u8TempCounter] = GlobalUART_u8RXData;
+	Global_u8TempCounter++;
+	if(GlobalUART_u8RXData == '\0' || Global_u8TempCounter == 10)
+	{
+		Global_u32Products = atoi(Global_u8TempProducts);
+		Global_u8TempCounter = 0;
+	}
+}
+
+void APP_voidCheckProductsLimit(void)
+{
+	if(Global_u32ProductsLimit != 0 && Global_u32Products >= Global_u32ProductsLimit)
+	{
+		// stop the machine
+		Global_u8MachineStatus = MACHINE_STOPPED;
+		// stopping the program and sending the stop signal to the second MCU using uart
+		UART_voidSendData(MACHINE_STOP_CODE);
+
+		// display the limit reached message
+		String_voidPrepareStrings("Products Limit Reached", "Stopping the Machine", "", "");
+		CLCD_voidSendNewStrings(Global_u8MenuString, CURSOR_THIRD_LINE, 0);
+		// wait some time to show the final limit
+		_delay_ms(DEFAULT_SHOW_TIME);
+
+		// reset the enter button state
+		Global_u8ButtonEnterState = BUTTON_NOT_PRESSED;
+	}
+}
+
+void APP_voidCheckToggleButton(void)
+{
+	if(BUTTON_u8GetState(BUTTON_TOGGLE_RUN) == BUTTON_PRESSED)
+	{
+		BUTTON_voidSetButtonToggleRunState();
+	}
+}
+
+u8 BUTTON_u8Waiting(void)
+{
+	u32 Local_u32Counter = 0;
+	while(1)
+	{
+		// check if the products limit is reached, stop the machine
+		APP_voidCheckProductsLimit();
+		if(Global_u8MachineStatus == MACHINE_STOPPED)
+			break;
+
+		if(BUTTON_u8GetState(BUTTON_UP) == BUTTON_PRESSED)
+		{
+			return BUTTON_UP;
+		}
+		if(BUTTON_u8GetState(BUTTON_DOWN) == BUTTON_PRESSED)
+		{
+			return BUTTON_DOWN;
+		}
+		if(BUTTON_u8GetState(BUTTON_ENTER) == BUTTON_PRESSED)
+		{
+			return BUTTON_ENTER;
+		}
+		if(BUTTON_u8GetState(BUTTON_TOGGLE_RUN) == BUTTON_PRESSED)
+		{
+			return BUTTON_TOGGLE_RUN;
+		}
+		Local_u32Counter++;
+		if(Local_u32Counter >= BUTTON_TIMEOUT)
+			break;
+		_delay_ms(50);
+	}
+	return BUTTON_NOT_PRESSED;
+}

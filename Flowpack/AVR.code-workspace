@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"io.h": "c",
+			"io86r401.h": "c",
+			"dio_interface.h": "c",
+			"exti_register.h": "c",
+			"clcd_interface.h": "c",
+			"dio_private.h": "c"
+		}
+	}
+}
