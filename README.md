@@ -1,4 +1,4 @@
-# 🚀 Flow-Pack Machine
+# Flow-Pack Machine
 
 The Flow-Pack Machine was successfully designed, implemented, and tested with a focus on mechanical, electrical, and control systems. Components were modeled in SolidWorks, CNC-machined, and assembled into mechanisms like conveyors and sealing units. The electrical system was optimized with proper power regulation, and the control system was built using a layered embedded C architecture (MCAL, HAL, APP). Once integrated, the machine achieved reliable, high-precision packaging performance.
 
@@ -15,7 +15,8 @@ The Flow-Pack Machine was successfully designed, implemented, and tested with a 
    - [Motors & Drivers](#motors--drivers)  
    - [Heaters](#heaters)  
 5. [Embedded Control System](#embedded-control-system)  
-   - [MCU1 & MCU2 Overview](#mcu1--mcu2-overview)  
+   - [MCU1 Overview](#mcu1-overview)
+   - [MCU2 Overview](#mcu2-overview)
    - [Pin Mapping](#pin-mapping)  
    - [UART Communication](#uart-communication)  
    - [Software Architecture](#software-architecture)  
@@ -26,7 +27,7 @@ The Flow-Pack Machine was successfully designed, implemented, and tested with a 
 
 ---
 
-## 🧠 Project Overview
+## Project Overview <a name="project-overview"></a>
 
 A fully automated packaging machine built with embedded control and mechatronics integration. The system wraps, seals, fills, and cuts packets using polypropylene film.
 
@@ -34,7 +35,7 @@ A fully automated packaging machine built with embedded control and mechatronics
 
 ---
 
-## 🔁 How It Works - The Packaging Process
+## 🔁 How It Works - The Packaging Process <a name="how-it-works---the-packaging-process"></a>
 
 1. The film roll is pulled and wrapped around the forming shoulder.  
 2. Vertical heaters seal the sides.  
@@ -46,7 +47,7 @@ A fully automated packaging machine built with embedded control and mechatronics
 
 ---
 
-## 🛠️ Mechanical Design & Materials
+## 🛠️ Mechanical Design & Materials <a name="mechanical-design--materials"></a>
 
 Designed using **SolidWorks** and manufactured with **CNC machining**.  
 
@@ -54,15 +55,15 @@ Designed using **SolidWorks** and manufactured with **CNC machining**.
 
 ---
 
-## 🔌 Electrical Components
+## 🔌 Electrical Components <a name="electrical-components"></a>
 
-### ⚙️ Motors & Drivers
+### ⚙️ Motors & Drivers <a name="motors--drivers"></a>
 
 - **DC Motors**: Used in heater movement and conveyor (24V, 200RPM, 2.35Nm)  
 - **Stepper Motors**: For shrink film positioning  
 - **Drivers**: Cytron MDD10A, L298N H-Bridge
 
-### 🔥 Heaters
+### Heaters <a name="heaters"></a>
 
 - 4 AC-powered heaters (130W, 220V)  
 - 2 vertical + 2 horizontal  
@@ -72,9 +73,9 @@ Designed using **SolidWorks** and manufactured with **CNC machining**.
 
 ---
 
-## 👨‍💻 Embedded Control System
+## 👨‍💻 Embedded Control System <a name="embedded-control-system"></a>
 
-#### 📟 MCU1 – User Interface & Command Controller
+#### MCU1 – User Interface & Command Controller <a name="mcu1-overview"></a>
 
 **Role:**  
 MCU1 is responsible for handling all **user interactions** and managing the **control logic** between human inputs and machine operations.
@@ -96,7 +97,7 @@ MCU1 is responsible for handling all **user interactions** and managing the **co
 
 ---
 
-#### 🔧 MCU2 – Motor & Sensor Logic Controller
+#### MCU2 – Motor & Sensor Logic Controller <a name="mcu2-overview"></a>
 
 **Role:**  
 MCU2 serves as the **execution engine** of the system, directly controlling all **motors, sensors, and actuators**.
@@ -116,7 +117,7 @@ MCU2 serves as the **execution engine** of the system, directly controlling all 
 
 ---
 
-### 🧷 Pin Mapping
+### 🧷 Pin Mapping <a name="pin-mapping"></a>
 
 #### MCU1:
 - LCD → PORTA & PORTB  
@@ -134,7 +135,7 @@ MCU2 serves as the **execution engine** of the system, directly controlling all 
 
 ---
 
-### 🔄 UART Communication
+### 🔄 UART Communication <a name="uart-communication"></a>
 
 MCUs communicate via UART protocol.
 
@@ -148,13 +149,13 @@ MCUs communicate via UART protocol.
 
 ---
 
-### 🧱 Software Architecture
+### 🧱 Software Architecture <a name="software-architecture"></a>
 
 ![Software Architecture](images/layered_architecture.jpg)
 
 ---
 
-### 🧩 Modules (MCAL, HAL, APP)
+### 🧩 Modules (MCAL, HAL, APP) <a name="modules-mcal-hal-app"></a>
 
 - **MCAL**: Handles direct hardware (timers, interrupts, UART)  
 - **HAL**: Interfaces for LCD, buttons, motors, sensors  
@@ -164,7 +165,7 @@ MCUs communicate via UART protocol.
 
 ---
 
-## 🔁 Control Flow & Algorithms
+## 🔁 Control Flow & Algorithms <a name="control-flow--algorithms"></a>
 
 ### 🔂 MCU1 Flow
 
@@ -189,7 +190,7 @@ MCUs communicate via UART protocol.
 
 ---
 
-## ✅ Conclusion & Future Work
+## ✅ Conclusion & Future Work <a name="conclusion--future-work"></a>
 
 ### 🔚 Conclusion
 
@@ -199,7 +200,7 @@ MCUs communicate via UART protocol.
 - Modular layered firmware in C  
 - Successfully tested — sealed and packaged products automatically
 
-### 🔮 Future Work
+### Future Work
 
 - Optimize heater feedback with temperature sensors  
 - Improve motor synchronization and speed  
@@ -208,7 +209,7 @@ MCUs communicate via UART protocol.
 
 ---
 
-## 🙌 Credits
+## Credits <a name="credits"></a>
 
 **Made By:**  
 Ahmed Mohamed, Ali Yehya, Felopateer Emad,
